@@ -19,7 +19,7 @@ impl ServerPool {
         self.list.push(Server::new(url));
     }
 
-    pub fn direct_and_rotate(&mut self) -> &str {
+    pub fn direct_and_rotate(&mut self) -> String {
         let pool_size = self.list.len();
         let current_index = self.next;
         let current = &self.list[current_index].url;
@@ -27,10 +27,10 @@ impl ServerPool {
             todo!("Default HTTP response for 'no servers set'")
         }
         match pool_size - 1 <= current_index {
-            true => self.next += 1,
-            false => self.next = 0,
+            false => self.next += 1,
+            true => self.next = 0,
         }
-        current
+        String::from(current)
     }
 }
 
