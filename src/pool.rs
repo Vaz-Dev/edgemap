@@ -1,3 +1,4 @@
+// todo: make fields private and expose methods
 pub struct ServerPool {
     pub list: Vec<Server>,
     pub next: usize,
@@ -20,13 +21,13 @@ impl ServerPool {
     }
 
     pub fn direct_and_rotate(&mut self) -> String {
+        if self.list.is_empty() {
+            todo!("Default HTTP response for 'no servers set'")
+        }
         let pool_size = self.list.len();
         let current_index = self.next;
         let current = &self.list[current_index].url;
-        if pool_size == 0 {
-            todo!("Default HTTP response for 'no servers set'")
-        }
-        match pool_size - 1 <= current_index {
+        match pool_size <= current_index + 1 {
             false => self.next += 1,
             true => self.next = 0,
         }
