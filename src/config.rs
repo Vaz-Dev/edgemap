@@ -12,8 +12,8 @@ pub struct Config {
 
 #[derive(Deserialize)]
 pub struct SiteMapEntry {
-    loc: String,
-    priority: f64,
+    pub loc: String,
+    pub priority: f64,
 }
 
 static DEFAULT_PORT: u16 = 8080;
@@ -60,10 +60,56 @@ impl Config {
     }
 
     fn read_yaml_config(path: &str) -> Result<Config, io::Error> {
-        todo!()
+        todo!("Not yet implemented, use config.json or edgemap.json")
     }
 
     fn read_xml_sitemap(path: &str) -> Result<Config, io::Error> {
-        todo!()
+        todo!("Not yet implemented, use config.json or edgemap.json")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use reqwest::Method;
+
+    use crate::cache::{CacheHandler, PathType, RequestData};
+
+    use super::*;
+
+    fn test_sitemap() -> Vec<SiteMapEntry> {
+        vec![
+            SiteMapEntry { loc: "/".to_string(), priority: 1.0 },
+            SiteMapEntry { loc: "/public/*".to_string(), priority: 0.5 },
+        ]
+    }
+
+    #[test]
+    fn test_exact_match_allowed() {
+        let cache = CacheHandler::new(test_sitemap(), 2);
+        let req = RequestData {
+            uri: "/".parse().unwrap(),
+            method: Method::GET,
+        };
+        assert!(matches!(cache.check(&req), PathType::Public | PathType::Cached(_)));
+    }
+
+    #[test]
+    fn test_wildcard_match_allowed() {
+        let cache = CacheHandler::new(test_sitemap(), 2);
+        let req = RequestData {
+            uri: "/public/style.css".parse().unwrap(),
+            method: Method::GET,
+        };
+        assert!(matches!(cache.check(&req), PathType::Public | PathType::Cached(_)));
+    }
+
+    #[test]
+    fn test_api_path_blocked() {
+        let cache = CacheHandler::new(test_sitemap(), 2);
+        let req = RequestData {
+            uri: "/api/users".parse().unwrap(),
+            method: Method::GET,
+        };
+        assert!(matches!(cache.check(&req), PathType::Private));
     }
 }

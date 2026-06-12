@@ -6,7 +6,7 @@
   ],
   "sitemap": [
     {
-      "loc": "/",
+      "loc": "/*",
       "priority": 1.0
     }
   ],

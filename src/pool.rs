@@ -13,7 +13,8 @@ impl UpstreamPool {
 
     pub fn direct_and_rotate(&mut self) -> String {
         if self.upstreams.is_empty() {
-            todo!("Default HTTP response for 'no servers set'")
+            //todo: panic on parse of no servers are set
+            panic!("Fatal Error: No upstream servers set")
         }
         let pool_size = self.upstreams.len();
         let current_index = self.next;

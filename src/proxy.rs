@@ -2,7 +2,7 @@ use axum::{body::Body as AxumBody, extract::Request as AxumRequest, http::{Heade
 use bytes::Bytes;
 use http_body_util::BodyExt;
 use reqwest::{Client, Method, Response as ReqwestResponse, StatusCode};
-use std::{ sync::{Arc, Mutex}, time::Duration};
+use std::{ sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}};
 use tower::{limit::ConcurrencyLimitLayer};
 
 use crate::{cache::{CacheData, CacheHandler, PathType, RequestData}, config::{Config, SiteMapEntry}, pool::UpstreamPool};
@@ -36,9 +36,9 @@ impl ProxyHandler {
         let path_type = self.cache_handler.check(&request_data);
 
         match path_type {
-            PathType::CachedPath(cache_data) => self.handle_cached(cache_data, axum_req).await,
-            PathType::PublicPath => self.handle_public(axum_req).await,
-            PathType::PrivatePath => self.handle_private(axum_req).await,
+            PathType::Cached(cache_data) => self.handle_cached(cache_data, axum_req).await,
+            PathType::Public => self.handle_public(axum_req).await,
+            PathType::Private => self.handle_private(axum_req).await,
         }
     }
 
@@ -70,7 +70,11 @@ impl ProxyHandler {
         }
         res_builder = res_builder.header("Cache-Status", "EdgeMap; fwd=miss");
         let res_body = server_res.bytes().await?;
-        let cache_data = CacheData { bytes: res_body.clone(), res_headers };
+        //todo: make a constructor for cachedata that gets the timestamp by itself
+        let cache_data = CacheData {
+            bytes: res_body.clone(),
+            last_access: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
+            res_headers };
         let proxy_res = res_builder
             .body(AxumBody::from(res_body))?;
 
