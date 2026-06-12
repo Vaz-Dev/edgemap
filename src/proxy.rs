@@ -5,17 +5,18 @@ use reqwest::{Client, Method, Response as ReqwestResponse, StatusCode};
 use std::{ sync::{Arc, Mutex}, time::Duration};
 use tower::{limit::ConcurrencyLimitLayer};
 
-use crate::{cache::{CacheData, CacheHandler, PathType, RequestData}, pool::ServerPool};
+use crate::{cache::{CacheData, CacheHandler, PathType, RequestData}, config::{Config, SiteMapEntry}, pool::UpstreamPool};
 
 pub struct ProxyHandler {
     http_client: Client,
-    pool: Arc<Mutex<ServerPool>>,
+    pool: Arc<Mutex<UpstreamPool>>,
     cache_handler: CacheHandler,
 }
 
-
+// todo: extract common logic from the methods, too much DRY violations
 impl ProxyHandler {
-    pub fn new(pool: ServerPool, sitemap: Vec<String>) -> Self {
+    pub fn new(config: Config) -> Self {
+            let pool: UpstreamPool = UpstreamPool::new(config.upstreams);
             let client = Client::builder()
                 .timeout(Duration::from_millis(5000))
                 .connect_timeout(Duration::from_millis(200))
@@ -26,7 +27,7 @@ impl ProxyHandler {
             ProxyHandler {
                 http_client: client,
                 pool: Arc::new(Mutex::new(pool)),
-                cache_handler: CacheHandler::new(sitemap)
+                cache_handler: CacheHandler::new(config.sitemap, config.max_memory_mb)
             }
     }
 
@@ -48,6 +49,7 @@ impl ProxyHandler {
             let mut pool_guard = self.pool.lock().expect("Pool poisoned");
             pool_guard.direct_and_rotate()
         };
+        println!("DEBUG - Fetching from upstream {} and storing in cache", server);
 
         let req_data = RequestData::extract(&axum_req);
         // todo: avoid cloning headers?
@@ -115,6 +117,7 @@ impl ProxyHandler {
     async fn handle_cached(&self, cache_data: CacheData, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
         let body_bytes: Bytes = cache_data.bytes;
+        println!("DEBUG - Loaded {} bytes from cache memory", body_bytes.len());
 
         let res_status: StatusCode = StatusCode::OK;
         let mut res_builder = AxumResponse::builder().status(res_status);

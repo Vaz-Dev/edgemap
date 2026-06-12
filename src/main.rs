@@ -1,13 +1,15 @@
-use std::sync::Arc;
+use std::{env, sync::Arc};
 
 use axum::{Router, extract::{Request, State}, response::IntoResponse, routing::get};
+use http_body_util::Collected;
 use reqwest::StatusCode;
 
-use crate::{pool::ServerPool, proxy::ProxyHandler};
+use crate::{config::Config, pool::UpstreamPool, proxy::ProxyHandler};
 
 mod pool;
 mod proxy;
 mod cache;
+mod config;
 
 async fn handle_proxy(
     State(handler): State<Arc<ProxyHandler>>,
@@ -21,19 +23,17 @@ async fn handle_proxy(
 
 #[tokio::main]
 async fn main() {
-    let mut  pool = ServerPool::new();
-    // sitemap not implemented yet, but it needs to exist in the struct
-    let sitemap = Vec::new();
-    // todo: dynamic server pool from args?
-    pool.add("http://localhost:3000".to_string());
-    let handler = Arc::new(ProxyHandler::new(pool, sitemap));
+    println!("EdgeMap 0.1 - Initializing...");
+    let args: Vec<String> = env::args().collect();
+    let config: Config = Config::new(args);
+    let output_url = format!("0.0.0.0:{}", config.output_port);
+    let handler: Arc<ProxyHandler> = Arc::new(ProxyHandler::new(config));
 
     // todo: add route() instead of fallback()
     let app = Router::new()
         .fallback(handle_proxy)
         .with_state(handler);
 
-    //todo: dynamic port from .env
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(output_url).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

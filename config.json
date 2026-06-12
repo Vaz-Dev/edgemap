@@ -1,0 +1,14 @@
+{
+  "output_port": 9001,
+  "upstreams": [
+    "http://localhost:3000",
+    "http://localhost:3001"
+  ],
+  "sitemap": [
+    {
+      "loc": "/",
+      "priority": 1.0
+    }
+  ],
+  "max_memory_mb": 2
+}

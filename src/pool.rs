@@ -1,42 +1,27 @@
 // todo: make fields private and expose methods
-pub struct ServerPool {
-    pub list: Vec<Server>,
+pub struct UpstreamPool {
+    pub upstreams: Vec<Upstream>,
     pub next: usize,
 }
 
-pub struct Server {
-    pub url: String,
-}
+type Upstream = String;
 
-impl ServerPool {
-    pub fn new() -> Self {
-        ServerPool {
-            list: vec![],
-            next: 0,
-        }
-    }
-
-    pub fn add(&mut self, url: String) {
-        self.list.push(Server::new(url));
+impl UpstreamPool {
+    pub fn new(upstreams: Vec<String>) -> Self {
+        UpstreamPool { upstreams, next: 0 }
     }
 
     pub fn direct_and_rotate(&mut self) -> String {
-        if self.list.is_empty() {
+        if self.upstreams.is_empty() {
             todo!("Default HTTP response for 'no servers set'")
         }
-        let pool_size = self.list.len();
+        let pool_size = self.upstreams.len();
         let current_index = self.next;
-        let current = &self.list[current_index].url;
+        let current = &self.upstreams[current_index];
         match pool_size <= current_index + 1 {
             false => self.next += 1,
             true => self.next = 0,
         }
         String::from(current)
-    }
-}
-
-impl Server {
-    pub fn new(url: String) -> Self {
-        Server { url }
     }
 }
