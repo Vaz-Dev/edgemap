@@ -12,15 +12,16 @@ Key Features
   - Cache-Status Header: Implements Cache-Status (RFC 9211) to show if a response came from the cache or upstream.
 
 ## Cache Performance
-Tested with a simple Express.js server, on heavy SSR apps (like Next.js) performance should be better, while on Go multi-threaded servers the performance gains should be much lower.
+Tested in localhost (no network overhead) with a simple Express.js server serving HTML.
+On heavy SSR apps (like Next.js) performance should be better, while on Go multi-threaded servers the performance gains should be much lower.
 
 ### Single-threaded (~6x faster, tested with `$ hey -c 1 -z 60s http://localhost:8080`)
-- Direct upstream (no cache): 422 RPS, 24ms
-- EdgeMap proxy (in-memory cache): 2534 RPS, 4ms
+- Direct upstream (no cache): 422 RPS, 2.4ms avg
+- EdgeMap proxy (in-memory cache): 2,534 RPS, 0.4ms avg
 
 ### Multi-threaded (~30x faster, tested with `$ hey -c 16 -z 60s http://localhost:8080`)
-- Direct upstream (no cache): 662 RPS, 242ms
-- EdgeMap proxy (in-memory cache): 20197 RPS, 10ms
+- Direct upstream (no cache): 662 RPS, 24.2ms avg
+- EdgeMap proxy (in-memory cache): 20,197 RPS, 1.0ms avg (+1M req/min)
 
 ## Configuration
 
