@@ -11,7 +11,18 @@ Key Features
   - Protocol Handling: Filters hop-by-hop headers (Connection, Transfer-Encoding) to comply with RFC 7230 proxy standards.
   - Cache-Status Header: Implements Cache-Status (RFC 9211) to show if a response came from the cache or upstream.
 
-Configuration
+## Cache Performance
+Tested with a simple Express.js server, on heavy SSR apps (like Next.js) performance should be better, while on Go multi-threaded servers the performance gains should be much lower.
+
+### Single-threaded (~6x faster, tested with `$ hey -c 1 -z 60s http://localhost:8080`)
+- Direct upstream (no cache): 422 RPS, 24ms
+- EdgeMap proxy (in-memory cache): 2534 RPS, 4ms
+
+### Multi-threaded (~30x faster, tested with `$ hey -c 16 -z 60s http://localhost:8080`)
+- Direct upstream (no cache): 662 RPS, 242ms
+- EdgeMap proxy (in-memory cache): 20197 RPS, 10ms
+
+## Configuration
 
 Run with a config file:
 
