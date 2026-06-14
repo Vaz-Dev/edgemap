@@ -2,14 +2,14 @@ use axum::{body::Body as AxumBody, extract::Request as AxumRequest, http::{Heade
 use bytes::Bytes;
 use http_body_util::BodyExt;
 use reqwest::{Client, Method, Response as ReqwestResponse, StatusCode};
-use std::{ sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{ time::{Duration, SystemTime, UNIX_EPOCH}};
 use tower::{limit::ConcurrencyLimitLayer};
 
 use crate::{cache::{CacheData, CacheHandler, PathType, RequestData}, config::{Config, SiteMapEntry}, pool::UpstreamPool};
 
 pub struct ProxyHandler {
     http_client: Client,
-    pool: Arc<Mutex<UpstreamPool>>,
+    pool: UpstreamPool,
     cache_handler: CacheHandler,
 }
 
@@ -26,7 +26,7 @@ impl ProxyHandler {
                 .unwrap();
             ProxyHandler {
                 http_client: client,
-                pool: Arc::new(Mutex::new(pool)),
+                pool,
                 cache_handler: CacheHandler::new(config.sitemap, config.max_memory_mb)
             }
     }
@@ -44,11 +44,7 @@ impl ProxyHandler {
 
     async fn handle_public(&self, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
-        let server = {
-            // todo: recover from poisoned mutex
-            let mut pool_guard = self.pool.lock().expect("Pool poisoned");
-            pool_guard.direct_and_rotate()
-        };
+        let server = self.pool.get_upstream();
         println!("DEBUG - Fetching from upstream {} and storing in cache", server);
 
         let req_data = RequestData::extract(&axum_req);
@@ -84,11 +80,8 @@ impl ProxyHandler {
 
     async fn handle_private(&self, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
-        let server = {
-            // todo: recover from poisoned mutex
-            let mut pool_guard = self.pool.lock().expect("Pool poisoned");
-            pool_guard.direct_and_rotate()
-        };
+        let server = self.pool.get_upstream();
+        println!("DEBUG - Bypassing to upstream {}", server);
 
         let method: Method = axum_req.method().clone();
         let uri: Uri = axum_req.uri().clone();
