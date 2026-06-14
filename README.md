@@ -8,7 +8,6 @@ Key Features
   - In-Memory Caching: Stores full HTTP responses in a thread-safe HashMap. Tested to reduce latency from ~9ms to <1ms on cache hits.
   - Load Balancing: Distributes non-cached traffic across multiple upstreams using round-robin.
   - Memory Safety: Tracks total cache size atomically. When the limit is reached, it stops caching new large items to prevent OOM crashes instead of panicking.
-  - Protocol Handling: Filters hop-by-hop headers (Connection, Transfer-Encoding) to comply with RFC 7230 proxy standards.
   - Cache-Status Header: Implements Cache-Status (RFC 9211) to show if a response came from the cache or upstream.
 
 ## Cache Performance
@@ -52,3 +51,4 @@ This is a **prototype** and not yet to be used in production. Here is what is st
   - RFC 9111 Compliance: i am currently implementing Cache-Control, ETag, and Vary header logic to fully respect origin server directives.
   - Zero-Copy Streaming: right now, bodies are buffered into memory. Future refactoring will use raw TCP streaming to handle large files without memory overhead.
   - Scaling: upstream servers are currently static in the config. in the future the project will manage containers/processes to increase the number of instances under load, or scale to zero if the use case allows for mainly cache use of the assets.
+  - Protocol Handling: Filtering hop-by-hop headers (Connection, Transfer-Encoding) to comply with RFC 7230 proxy standards.
