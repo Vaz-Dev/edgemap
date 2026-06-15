@@ -5,7 +5,7 @@ use reqwest::{Client, Method, Response as ReqwestResponse, StatusCode};
 use std::{ time::{Duration, SystemTime, UNIX_EPOCH}};
 use tower::{limit::ConcurrencyLimitLayer};
 
-use crate::{cache::{CacheData, CacheHandler, PathType, RequestData}, config::{Config, SiteMapEntry}, pool::UpstreamPool};
+use crate::{cache::{CacheData, CacheHandler, PathType, RequestData}, config::{Config}, pool::UpstreamPool};
 
 pub struct ProxyHandler {
     http_client: Client,

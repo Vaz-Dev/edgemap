@@ -100,9 +100,12 @@ impl CacheHandler {
         let max_cache_bytes = self.max_bytes;
         if new_data_bytes + current_cache_bytes < max_cache_bytes {
             let mut cache_guard = self.cache.lock().expect("Cache poisoned");
-            self.current_bytes
-                .fetch_add(new_data_bytes, Ordering::Relaxed);
-            (*cache_guard).insert(req_data, cache_data);
+            // todo: find a better way to make this thread safe, this lock and double check is safe but inefficient
+            if self.current_bytes.load(Ordering::Relaxed) + new_data_bytes < max_cache_bytes {
+                self.current_bytes
+                    .fetch_add(new_data_bytes, Ordering::Relaxed);
+                (*cache_guard).insert(req_data, cache_data);
+            }
         } else {
             // let new_data_priority = {
             //     self.sitemap.iter().find_map(|entry| {
