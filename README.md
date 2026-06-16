@@ -24,13 +24,8 @@ On heavy SSR apps (like Next.js) performance should be better, while on Go multi
 
 ## Configuration
 
-Run with a config file:
-
-cargo run config.json
-
-Or use Lite Mode (single upstream):
-
-cargo run 3000
+### Run with a config file:
+`cargo run config.json`
 
 Example config.json:
 
@@ -45,6 +40,10 @@ Example config.json:
   "max_memory_mb": 50
 }
 ```
+
+### Or use Lite Mode (single upstream):
+`cargo run 3000`
+
 This is a **prototype** and not yet to be used in production. Here is what is still missing or being worked on:
 
   - Weighted Eviction: currently, when memory is full, the proxy skips caching new items. The plan is to implement a priority-based eviction algorithm that removes low-weight entries first.

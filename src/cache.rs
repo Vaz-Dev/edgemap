@@ -4,7 +4,6 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Mutex,
     },
-    time::Duration,
 };
 
 use axum::{
@@ -12,7 +11,7 @@ use axum::{
     http::{HeaderMap, Uri},
 };
 use bytes::Bytes;
-use reqwest::Method;
+use reqwest::{header, Method};
 
 use crate::config::SiteMapEntry;
 
@@ -26,9 +25,7 @@ pub struct CacheHandler {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CacheData {
     pub bytes: Bytes,
-    pub res_headers: HeaderMap,
-    pub last_access: Duration,
-    // todo: other cache-control rules
+    pub headers: HeaderMap,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -51,6 +48,11 @@ pub enum PathType {
     Private,
 }
 
+// todo: should not be a blacklist check, should be a whitelist
+// todo: from upstream the cache-control: no-cache is different than no-store, it actually wants cache but for the proxy to always check for 304 Not Modified
+static CACHE_CONTROL_CONTAINS_BLACKLIST: [&str; 4] =
+    ["no-cache", "no-store", "max-age=0", "private"];
+
 impl CacheHandler {
     pub fn new(sitemap: Vec<SiteMapEntry>, max_memory_mb: u64) -> Self {
         CacheHandler {
@@ -61,10 +63,25 @@ impl CacheHandler {
         }
     }
 
-    pub fn check(&self, req_data: &RequestData) -> PathType {
+    pub fn check(&self, req_data: &RequestData, headers: &HeaderMap) -> PathType {
         let path = req_data.uri.path();
 
         let is_allowed = self.sitemap.iter().any(|entry| {
+            if let Some(cache_control_data) = headers.get(header::CACHE_CONTROL) {
+                for blacklisted_value in CACHE_CONTROL_CONTAINS_BLACKLIST {
+                    if cache_control_data
+                        .to_str()
+                        .unwrap_or_default()
+                        .contains(blacklisted_value)
+                    {
+                        println!(
+                            "DEBUG - Client requested bypass at {}, using header Cache-Control: {}",
+                            req_data.uri, blacklisted_value
+                        );
+                        return false;
+                    }
+                }
+            }
             let loc = &entry.loc;
             if loc == path {
                 return true;
@@ -95,6 +112,22 @@ impl CacheHandler {
     }
 
     pub fn save(&self, req_data: RequestData, cache_data: CacheData) {
+        if let Some(cache_control_data) = cache_data.headers.get(header::CACHE_CONTROL) {
+            for blacklisted_value in CACHE_CONTROL_CONTAINS_BLACKLIST {
+                if cache_control_data
+                    .to_str()
+                    .unwrap_or_default()
+                    .contains(blacklisted_value)
+                {
+                    println!(
+                        "DEBUG - Upstream endpoint {} requested not to cache this asset, using Cache-Control: {}",
+                        req_data.uri,
+                        blacklisted_value
+                    );
+                    return;
+                }
+            }
+        }
         let new_data_bytes = cache_data.bytes.len();
         let current_cache_bytes = self.current_bytes.load(Ordering::Relaxed);
         let max_cache_bytes = self.max_bytes;

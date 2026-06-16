@@ -33,7 +33,7 @@ impl ProxyHandler {
 
     pub async fn handle(&self, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
         let request_data = RequestData::extract(&axum_req);
-        let path_type = self.cache_handler.check(&request_data);
+        let path_type = self.cache_handler.check(&request_data, axum_req.headers());
 
         match path_type {
             PathType::Cached(cache_data) => self.handle_cached(cache_data, axum_req).await,
@@ -66,11 +66,9 @@ impl ProxyHandler {
         }
         res_builder = res_builder.header("Cache-Status", "EdgeMap; fwd=miss");
         let res_body = server_res.bytes().await?;
-        //todo: make a constructor for cachedata that gets the timestamp by itself
         let cache_data = CacheData {
             bytes: res_body.clone(),
-            last_access: SystemTime::now().duration_since(UNIX_EPOCH).unwrap(),
-            res_headers };
+            headers: res_headers };
         let proxy_res = res_builder
             .body(AxumBody::from(res_body))?;
 
@@ -119,7 +117,7 @@ impl ProxyHandler {
         let res_status: StatusCode = StatusCode::OK;
         let mut res_builder = AxumResponse::builder().status(res_status);
         //todo: switch to axum::http::headerName
-        for (key, value) in cache_data.res_headers.iter() {
+        for (key, value) in cache_data.headers.iter() {
                 res_builder = res_builder.header(key, value)
         }
         res_builder = res_builder.header("Cache-Status", "EdgeMap; hit");
