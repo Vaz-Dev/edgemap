@@ -1,7 +1,8 @@
 EdgeMap is a reverse proxy I built in Rust to explore high-performance edge caching and load balancing. The goal was to solve the single-thread bottleneck of Node.js applications by offloading static traffic to RAM while keeping the backend alive only for dynamic requests.
 
 It acts as a smart layer between the client and a single/cluster of upstream servers, using a sitemap configuration to decide what gets cached.
-Key Features
+
+ ### Key Features
 
   - Async Reverse Proxy: Built on tokio and axum, handling concurrent requests without blocking.
   - Sitemap-Driven Routing: Uses a JSON config to define which paths are cached (/, /static/*) and which bypass the cache (/api). Supports wildcard patterns.
@@ -46,8 +47,9 @@ Example config.json:
 
 This is a **prototype** and not yet to be used in production. Here is what is still missing or being worked on:
 
-  - Weighted Eviction: currently, when memory is full, the proxy skips caching new items. The plan is to implement a priority-based eviction algorithm that removes low-weight entries first.
+  - **[In Progress](https://github.com/Vaz-Dev/edgemap/tree/feat/weighted-eviction) ->** Weighted Eviction: currently, when memory is full, the proxy skips caching new items. The plan is to implement a priority-based eviction algorithm that removes low-weight entries first.
   - RFC 9111 Compliance: i am currently implementing Cache-Control, ETag, and Vary header logic to fully respect origin server directives.
+  - Support for sitemap.xml: during initial development im using a quick and easy serde for the config.json, in the future the proxy will have a third mode (a mix of fully configurated and lite mode), which will use the standard sitemap.xml which most websites already have as valid configuration.
   - Zero-Copy Streaming: right now, bodies are buffered into memory. Future refactoring will use raw TCP streaming to handle large files without memory overhead.
   - Scaling: upstream servers are currently static in the config. in the future the project will manage containers/processes to increase the number of instances under load, or scale to zero if the use case allows for mainly cache use of the assets.
   - Protocol Handling: Filtering hop-by-hop headers (Connection, Transfer-Encoding) to comply with RFC 7230 proxy standards.
