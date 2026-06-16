@@ -1,17 +1,33 @@
 use axum::{body::Body as AxumBody, extract::Request as AxumRequest, http::{HeaderMap, Uri}, response::Response as AxumResponse };
 use bytes::Bytes;
 use http_body_util::BodyExt;
-use reqwest::{Client, Method, Response as ReqwestResponse, StatusCode};
-use std::{ time::{Duration, SystemTime, UNIX_EPOCH}};
+use reqwest::{Client, Method, Response as ReqwestResponse, StatusCode, header::CACHE_STATUS};
+use std::time::Duration;
 use tower::{limit::ConcurrencyLimitLayer};
 
-use crate::{cache::{CacheData, CacheHandler, PathType, RequestData}, config::{Config}, pool::UpstreamPool};
+use crate::{cache::{CacheItem, CacheHandler, PathType}, config::{Config}, pool::UpstreamPool};
 
 pub struct ProxyHandler {
     http_client: Client,
     pool: UpstreamPool,
     cache_handler: CacheHandler,
 }
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RequestData {
+    pub uri: Uri,
+    pub method: Method,
+}
+impl RequestData {
+    pub fn extract(request: &AxumRequest) -> Self {
+        RequestData {
+            uri: request.uri().clone(),
+            method: request.method().clone(),
+        }
+    }
+}
+
 
 // todo: extract common logic from the methods, too much DRY violations
 impl ProxyHandler {
@@ -64,9 +80,9 @@ impl ProxyHandler {
         for (key, value) in res_headers.iter() {
                 res_builder = res_builder.header(key, value)
         }
-        res_builder = res_builder.header("Cache-Status", "EdgeMap; fwd=miss");
+        res_builder = res_builder.header(CACHE_STATUS, "EdgeMap; fwd=miss");
         let res_body = server_res.bytes().await?;
-        let cache_data = CacheData {
+        let cache_data = CacheItem {
             bytes: res_body.clone(),
             headers: res_headers };
         let proxy_res = res_builder
@@ -100,7 +116,7 @@ impl ProxyHandler {
         for (key, value) in server_res.headers() {
                 res_builder = res_builder.header(key, value)
         }
-        res_builder = res_builder.header("Cache-Status", "EdgeMap; fwd=bypass");
+        res_builder = res_builder.header(CACHE_STATUS, "EdgeMap; fwd=bypass");
         let res_body = server_res.bytes().await?;
         let proxy_res = res_builder
             .body(AxumBody::from(res_body))?;
@@ -109,7 +125,7 @@ impl ProxyHandler {
     }
 
 
-    async fn handle_cached(&self, cache_data: CacheData, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_cached(&self, cache_data: CacheItem, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
         let body_bytes: Bytes = cache_data.bytes;
         println!("DEBUG - Loaded {} bytes from cache memory", body_bytes.len());
@@ -120,7 +136,7 @@ impl ProxyHandler {
         for (key, value) in cache_data.headers.iter() {
                 res_builder = res_builder.header(key, value)
         }
-        res_builder = res_builder.header("Cache-Status", "EdgeMap; hit");
+        res_builder = res_builder.header(CACHE_STATUS, "EdgeMap; hit");
         let proxy_res = res_builder
             .body(AxumBody::from(body_bytes))?;
 

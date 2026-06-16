@@ -70,9 +70,10 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use axum::http::HeaderMap;
     use reqwest::Method;
 
-    use crate::cache::{CacheHandler, PathType, RequestData};
+    use crate::{cache::{CacheHandler, PathType}, proxy::RequestData};
 
     use super::*;
 
@@ -90,7 +91,8 @@ mod tests {
             uri: "/".parse().unwrap(),
             method: Method::GET,
         };
-        assert!(matches!(cache.check(&req), PathType::Public | PathType::Cached(_)));
+        let headers = HeaderMap::new();
+        assert!(matches!(cache.check(&req, &headers), PathType::Public | PathType::Cached(_)));
     }
 
     #[test]
@@ -100,7 +102,8 @@ mod tests {
             uri: "/public/style.css".parse().unwrap(),
             method: Method::GET,
         };
-        assert!(matches!(cache.check(&req), PathType::Public | PathType::Cached(_)));
+        let headers = HeaderMap::new();
+        assert!(matches!(cache.check(&req, &headers), PathType::Public | PathType::Cached(_)));
     }
 
     #[test]
@@ -110,6 +113,7 @@ mod tests {
             uri: "/api/users".parse().unwrap(),
             method: Method::GET,
         };
-        assert!(matches!(cache.check(&req), PathType::Private));
+        let headers = HeaderMap::new();
+        assert!(matches!(cache.check(&req, &headers), PathType::Private));
     }
 }

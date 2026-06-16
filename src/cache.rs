@@ -1,50 +1,45 @@
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Mutex,
-    },
-};
+use std::{collections::HashMap, sync::RwLock, time::Duration};
 
-use axum::{
-    extract::Request as AxumRequest,
-    http::{HeaderMap, Uri},
-};
+use axum::http::HeaderMap;
 use bytes::Bytes;
-use reqwest::{header, Method};
+use reqwest::header;
 
-use crate::config::SiteMapEntry;
+use crate::{config::SiteMapEntry, proxy::RequestData};
 
 pub struct CacheHandler {
-    pub cache: Mutex<HashMap<RequestData, CacheData>>,
+    pub state: RwLock<CacheState>,
     pub sitemap: Vec<SiteMapEntry>,
-    pub current_bytes: AtomicUsize,
     pub max_bytes: usize,
 }
 
+struct CacheState {
+    cache: HashMap<RequestData, CacheItem>,
+    buckets: Vec<WeightsBucket>,
+    current_bytes: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CacheData {
+pub struct CacheItem {
     pub bytes: Bytes,
     pub headers: HeaderMap,
+    pub bucket_indexes: (usize, usize),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RequestData {
-    pub uri: Uri,
-    pub method: Method,
-}
-impl RequestData {
-    pub fn extract(request: &AxumRequest) -> Self {
-        RequestData {
-            uri: request.uri().clone(),
-            method: request.method().clone(),
-        }
-    }
+pub struct WeightsBucket {
+    pub weight: Priority,
+    pub entries: Vec<WeightEntry>,
 }
 
+pub struct WeightEntry {
+    key: RequestData,
+    size_bytes: usize,
+    created_at_unix_s: Duration,
+}
+
+type Priority = f64;
 pub enum PathType {
-    Cached(CacheData),
-    Public,
+    Cached(CacheItem),
+    Public(Priority),
     Private,
 }
 
@@ -55,10 +50,30 @@ static CACHE_CONTROL_CONTAINS_BLACKLIST: [&str; 4] =
 
 impl CacheHandler {
     pub fn new(sitemap: Vec<SiteMapEntry>, max_memory_mb: u64) -> Self {
+        let buckets = {
+            let mut weights = vec![];
+            sitemap.iter().for_each(|entry| {
+                let weight = entry.priority;
+                if !weights.contains(&weight) {
+                    weights.push(weight)
+                }
+            });
+            weights
+                .iter()
+                .map(|weight| WeightsBucket {
+                    weight: *weight,
+                    entries: vec![],
+                })
+                .collect()
+        };
+        let state = CacheState {
+            cache: HashMap::new(),
+            buckets,
+            current_bytes: 0,
+        };
         CacheHandler {
-            cache: Mutex::new(HashMap::new()),
+            state: RwLock::new(state),
             sitemap,
-            current_bytes: 0.into(),
             max_bytes: (max_memory_mb * 1024 * 1024) as usize,
         }
     }
@@ -66,7 +81,7 @@ impl CacheHandler {
     pub fn check(&self, req_data: &RequestData, headers: &HeaderMap) -> PathType {
         let path = req_data.uri.path();
 
-        let is_allowed = self.sitemap.iter().any(|entry| {
+        let is_allowed: Option<Priority> = self.sitemap.iter().find_map(|entry| {
             if let Some(cache_control_data) = headers.get(header::CACHE_CONTROL) {
                 for blacklisted_value in CACHE_CONTROL_CONTAINS_BLACKLIST {
                     if cache_control_data
@@ -78,40 +93,40 @@ impl CacheHandler {
                             "DEBUG - Client requested bypass at {}, using header Cache-Control: {}",
                             req_data.uri, blacklisted_value
                         );
-                        return false;
+                        return None;
                     }
                 }
             }
             let loc = &entry.loc;
             if loc == path {
-                return true;
+                return Some(entry.priority);
             }
             if loc.ends_with("/*") {
                 let prefix = &loc[..loc.len() - 2];
                 if path.starts_with(prefix) {
-                    return true;
+                    return None;
                 }
             }
-            false
+            None
         });
 
-        if is_allowed || self.sitemap.is_empty() {
-            let cached_response: Option<CacheData> = {
-                let cache_guard = self.cache.lock().expect("Cache poisoned");
-                (*cache_guard).get(req_data).cloned()
+        if let Some(priority) = is_allowed {
+            let cached_response: Option<CacheItem> = {
+                let cache_read_guard = self.state.read().expect("Cache State Poisoned");
+                cache_read_guard.cache.get(req_data).cloned()
             };
 
             // todo: check and respect cache-control, age, etag, last-modified, etc... from upstream - RFC 9111
             match cached_response {
                 Some(cache_data) => PathType::Cached(cache_data),
-                None => PathType::Public,
+                None => PathType::Public(priority),
             }
         } else {
             PathType::Private
         }
     }
 
-    pub fn save(&self, req_data: RequestData, cache_data: CacheData) {
+    pub fn save(&self, req_data: RequestData, cache_data: CacheItem) {
         if let Some(cache_control_data) = cache_data.headers.get(header::CACHE_CONTROL) {
             for blacklisted_value in CACHE_CONTROL_CONTAINS_BLACKLIST {
                 if cache_control_data
@@ -129,15 +144,19 @@ impl CacheHandler {
             }
         }
         let new_data_bytes = cache_data.bytes.len();
-        let current_cache_bytes = self.current_bytes.load(Ordering::Relaxed);
+        let current_cache_bytes = {
+            let cache_read_guard = self.state.read().expect("Cache State Poisoned");
+            cache_read_guard.current_bytes
+        };
         let max_cache_bytes = self.max_bytes;
         if new_data_bytes + current_cache_bytes < max_cache_bytes {
-            let mut cache_guard = self.cache.lock().expect("Cache poisoned");
+            let mut cache_write_guard = self.state.write().expect("Cache poisoned");
             // todo: find a better way to make this thread safe, this lock and double check is safe but inefficient
-            if self.current_bytes.load(Ordering::Relaxed) + new_data_bytes < max_cache_bytes {
-                self.current_bytes
-                    .fetch_add(new_data_bytes, Ordering::Relaxed);
-                (*cache_guard).insert(req_data, cache_data);
+            if cache_write_guard.current_bytes + new_data_bytes < max_cache_bytes {
+                cache_write_guard.current_bytes += new_data_bytes;
+                let mut indexes: (usize, usize);
+                let mut bucket: &WeightsBucket;
+                todo!("continue from here")
             }
         } else {
             // let new_data_priority = {
