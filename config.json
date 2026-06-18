@@ -6,9 +6,9 @@
   ],
   "sitemap": [
     {
-      "loc": "/",
+      "loc": "/*",
       "priority": 1.0
     }
   ],
-  "max_memory_mb": 2
+  "max_memory_mb": 1
 }

@@ -5,7 +5,7 @@ use reqwest::{Client, Method, Response as ReqwestResponse, StatusCode, header::C
 use std::time::Duration;
 use tower::{limit::ConcurrencyLimitLayer};
 
-use crate::{cache::{CacheItem, CacheHandler, PathType}, config::{Config}, pool::UpstreamPool};
+use crate::{cache::{CacheHandler, CacheItem, PathType, Priority}, config::Config, pool::UpstreamPool};
 
 pub struct ProxyHandler {
     http_client: Client,
@@ -53,12 +53,12 @@ impl ProxyHandler {
 
         match path_type {
             PathType::Cached(cache_data) => self.handle_cached(cache_data, axum_req).await,
-            PathType::Public => self.handle_public(axum_req).await,
+            PathType::Public(priority) => self.handle_public(axum_req, priority).await,
             PathType::Private => self.handle_private(axum_req).await,
         }
     }
 
-    async fn handle_public(&self, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_public(&self, axum_req: AxumRequest<AxumBody>, priority: Priority) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
         let server = self.pool.get_upstream();
         println!("DEBUG - Fetching from upstream {} and storing in cache", server);
@@ -82,13 +82,10 @@ impl ProxyHandler {
         }
         res_builder = res_builder.header(CACHE_STATUS, "EdgeMap; fwd=miss");
         let res_body = server_res.bytes().await?;
-        let cache_data = CacheItem {
-            bytes: res_body.clone(),
-            headers: res_headers };
         let proxy_res = res_builder
-            .body(AxumBody::from(res_body))?;
+            .body(AxumBody::from(res_body.clone()))?;
 
-        self.cache_handler.save(req_data, cache_data);
+        self.cache_handler.try_save(req_data, res_body, res_headers, priority);
         Ok(proxy_res)
     }
 

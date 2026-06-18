@@ -1,6 +1,10 @@
 [package]
-name = "proxy"
-version = "0.1.0"
+name = "edgemap"
+version = "0.1.0-alpha.1"
+authors = ["Lucas Vaz lucas@vazdev.com.br"]
+description = "Sitemap-defined caching reverse proxy"
+license = "MIT"
+repository = "https://github.com/Vaz-Dev/edgemap"
 edition = "2024"
 
 [dependencies]
