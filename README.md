@@ -10,6 +10,7 @@ It acts as a smart layer between the client and a single/cluster of upstream ser
   - Load Balancing: Distributes non-cached traffic across multiple upstreams using round-robin.
   - Memory Safety: Tracks total cache size atomically. When the limit is reached, it stops caching new large items to prevent OOM crashes instead of panicking.
   - Cache-Status Header: Implements Cache-Status (RFC 9211) to show if a response came from the cache or upstream.
+  - Weighted Eviction: A priority-based eviction algorithm that removes low-weight entries first, the configuration for it currently is in `.json`, with `sitemap.xml` support planned in the future.
 
 ## Cache Performance
 Tested in localhost (no network overhead) with a simple Express.js server serving HTML.
@@ -22,6 +23,28 @@ On heavy SSR apps (like Next.js) performance should be better, while on Go multi
 ### Multi-threaded (~30x faster, tested with `$ hey -c 16 -z 60s http://localhost:8080`)
 - Direct upstream (no cache): 662 RPS, 24.2ms avg
 - EdgeMap proxy (in-memory cache): 20,197 RPS, 1.0ms avg (+1M req/min)
+
+## Round-Robin, OOM Prevention and Weighted Eviction in Action
+On this example the config was defined as:
+- `/media/videos/*` is not set in the sitemap
+- `/media/logos/*` is set as a medium priority
+- `/media/cases/*` is set as the highest priority
+
+Results:
+```log
+DEBUG::<Proxy> - Fetching /media/images/logos/logo_header.png from upstream http://localhost:3001 and storing in cache
+DEBUG::<Proxy> - Bypassing /media/videos/hero_background.mp4 to upstream http://localhost:3000
+DEBUG::<Proxy> - Fetching /media/images/cases/client_a.jpg from upstream http://localhost:3001 and storing in cache
+DEBUG::<Proxy> - Fetching /media/images/cases/client_b.jpg from upstream http://localhost:3000 and storing in cache
+DEBUG::<Proxy> - Fetching /media/images/cases/client_c.jpg from upstream http://localhost:3001 and storing in cache
+DEBUG::<Cache> - Evicted /media/images/logos/logo_footer.png - Freeing 2116 bytes
+DEBUG::<Cache> - Evicted /media/images/logos/logo_hero.png - Freeing 4743 bytes
+DEBUG::<Cache> - Evicted /media/images/logos/logo_header.png - Freeing 3387 bytes
+DEBUG::<Cache> - Successfully evicted enough memory for /media/images/cases/client_d.jpg, storing in cache
+DEBUG::<Proxy> - Loaded 54885 bytes from cache memory
+DEBUG::<Proxy> - Loaded 83593 bytes from cache memory
+DEBUG::<Cache> - Cache full (1MB). Skipping cache for: /media/images/logo/logo_dark.jpg
+```
 
 ## Configuration
 
@@ -47,9 +70,9 @@ Example config.json:
 
 This is a **prototype** and not yet to be used in production. Here is what is still missing or being worked on:
 
-  - **[In Progress](https://github.com/Vaz-Dev/edgemap/tree/feat/weighted-eviction) ->** Weighted Eviction: currently, when memory is full, the proxy skips caching new items. The plan is to implement a priority-based eviction algorithm that removes low-weight entries first.
   - RFC 9111 Compliance: i am currently implementing Cache-Control, ETag, and Vary header logic to fully respect origin server directives.
   - Support for sitemap.xml: during initial development im using a quick and easy serde for the config.json, in the future the proxy will have a third mode (a mix of fully configurated and lite mode), which will use the standard sitemap.xml which most websites already have as valid configuration.
   - Zero-Copy Streaming: right now, bodies are buffered into memory. Future refactoring will use raw TCP streaming to handle large files without memory overhead.
   - Scaling: upstream servers are currently static in the config. in the future the project will manage containers/processes to increase the number of instances under load, or scale to zero if the use case allows for mainly cache use of the assets.
   - Protocol Handling: Filtering hop-by-hop headers (Connection, Transfer-Encoding) to comply with RFC 7230 proxy standards.
+  - TLS Support: currently, attempting to use HTTPS as upstreams causes undefined behavior, im planning to add this after the main features using `rustls`

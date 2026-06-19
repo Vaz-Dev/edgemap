@@ -1,17 +1,33 @@
 use axum::{body::Body as AxumBody, extract::Request as AxumRequest, http::{HeaderMap, Uri}, response::Response as AxumResponse };
 use bytes::Bytes;
 use http_body_util::BodyExt;
-use reqwest::{Client, Method, Response as ReqwestResponse, StatusCode};
-use std::{ time::{Duration, SystemTime, UNIX_EPOCH}};
+use reqwest::{Client, Method, Response as ReqwestResponse, StatusCode, header::CACHE_STATUS};
+use std::time::Duration;
 use tower::{limit::ConcurrencyLimitLayer};
 
-use crate::{cache::{CacheData, CacheHandler, PathType, RequestData}, config::{Config}, pool::UpstreamPool};
+use crate::{cache::{CacheHandler, CacheItem, PathType, Weight}, config::Config, pool::UpstreamPool};
 
 pub struct ProxyHandler {
     http_client: Client,
     pool: UpstreamPool,
     cache_handler: CacheHandler,
 }
+
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RequestData {
+    pub uri: Uri,
+    pub method: Method,
+}
+impl RequestData {
+    pub fn extract(request: &AxumRequest) -> Self {
+        RequestData {
+            uri: request.uri().clone(),
+            method: request.method().clone(),
+        }
+    }
+}
+
 
 // todo: extract common logic from the methods, too much DRY violations
 impl ProxyHandler {
@@ -37,15 +53,15 @@ impl ProxyHandler {
 
         match path_type {
             PathType::Cached(cache_data) => self.handle_cached(cache_data, axum_req).await,
-            PathType::Public => self.handle_public(axum_req).await,
+            PathType::Public(priority) => self.handle_public(axum_req, priority).await,
             PathType::Private => self.handle_private(axum_req).await,
         }
     }
 
-    async fn handle_public(&self, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_public(&self, axum_req: AxumRequest<AxumBody>, priority: Weight) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
         let server = self.pool.get_upstream();
-        println!("DEBUG - Fetching from upstream {} and storing in cache", server);
+        println!("DEBUG::<Proxy> - Fetching {} from upstream {} and storing in cache", axum_req.uri(), server);
 
         let req_data = RequestData::extract(&axum_req);
         // todo: avoid cloning headers?
@@ -64,22 +80,19 @@ impl ProxyHandler {
         for (key, value) in res_headers.iter() {
                 res_builder = res_builder.header(key, value)
         }
-        res_builder = res_builder.header("Cache-Status", "EdgeMap; fwd=miss");
+        res_builder = res_builder.header(CACHE_STATUS, "EdgeMap; fwd=miss");
         let res_body = server_res.bytes().await?;
-        let cache_data = CacheData {
-            bytes: res_body.clone(),
-            headers: res_headers };
         let proxy_res = res_builder
-            .body(AxumBody::from(res_body))?;
+            .body(AxumBody::from(res_body.clone()))?;
 
-        self.cache_handler.save(req_data, cache_data);
+        self.cache_handler.try_save(req_data, res_body, res_headers, priority);
         Ok(proxy_res)
     }
 
     async fn handle_private(&self, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
         let server = self.pool.get_upstream();
-        println!("DEBUG - Bypassing to upstream {}", server);
+        println!("DEBUG::<Proxy> - Bypassing {} to upstream {}", axum_req.uri(), server);
 
         let method: Method = axum_req.method().clone();
         let uri: Uri = axum_req.uri().clone();
@@ -100,7 +113,7 @@ impl ProxyHandler {
         for (key, value) in server_res.headers() {
                 res_builder = res_builder.header(key, value)
         }
-        res_builder = res_builder.header("Cache-Status", "EdgeMap; fwd=bypass");
+        res_builder = res_builder.header(CACHE_STATUS, "EdgeMap; fwd=bypass");
         let res_body = server_res.bytes().await?;
         let proxy_res = res_builder
             .body(AxumBody::from(res_body))?;
@@ -109,10 +122,10 @@ impl ProxyHandler {
     }
 
 
-    async fn handle_cached(&self, cache_data: CacheData, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_cached(&self, cache_data: CacheItem, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
         let body_bytes: Bytes = cache_data.bytes;
-        println!("DEBUG - Loaded {} bytes from cache memory", body_bytes.len());
+        println!("DEBUG::<Proxy> - Loaded {} bytes from cache memory", body_bytes.len());
 
         let res_status: StatusCode = StatusCode::OK;
         let mut res_builder = AxumResponse::builder().status(res_status);
@@ -120,7 +133,7 @@ impl ProxyHandler {
         for (key, value) in cache_data.headers.iter() {
                 res_builder = res_builder.header(key, value)
         }
-        res_builder = res_builder.header("Cache-Status", "EdgeMap; hit");
+        res_builder = res_builder.header(CACHE_STATUS, "EdgeMap; hit");
         let proxy_res = res_builder
             .body(AxumBody::from(body_bytes))?;
 
