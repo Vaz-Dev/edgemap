@@ -5,7 +5,7 @@ use reqwest::{Client, Method, Response as ReqwestResponse, StatusCode, header::C
 use std::time::Duration;
 use tower::{limit::ConcurrencyLimitLayer};
 
-use crate::{cache::{CacheHandler, CacheItem, PathType, Priority}, config::Config, pool::UpstreamPool};
+use crate::{cache::{CacheHandler, CacheItem, PathType, Weight}, config::Config, pool::UpstreamPool};
 
 pub struct ProxyHandler {
     http_client: Client,
@@ -58,10 +58,10 @@ impl ProxyHandler {
         }
     }
 
-    async fn handle_public(&self, axum_req: AxumRequest<AxumBody>, priority: Priority) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_public(&self, axum_req: AxumRequest<AxumBody>, priority: Weight) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
         let server = self.pool.get_upstream();
-        println!("DEBUG - Fetching from upstream {} and storing in cache", server);
+        println!("DEBUG::<Proxy> - Fetching {} from upstream {} and storing in cache", axum_req.uri(), server);
 
         let req_data = RequestData::extract(&axum_req);
         // todo: avoid cloning headers?
@@ -92,7 +92,7 @@ impl ProxyHandler {
     async fn handle_private(&self, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
         let server = self.pool.get_upstream();
-        println!("DEBUG - Bypassing to upstream {}", server);
+        println!("DEBUG::<Proxy> - Bypassing {} to upstream {}", axum_req.uri(), server);
 
         let method: Method = axum_req.method().clone();
         let uri: Uri = axum_req.uri().clone();
@@ -125,7 +125,7 @@ impl ProxyHandler {
     async fn handle_cached(&self, cache_data: CacheItem, axum_req: AxumRequest<AxumBody>) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
         let body_bytes: Bytes = cache_data.bytes;
-        println!("DEBUG - Loaded {} bytes from cache memory", body_bytes.len());
+        println!("DEBUG::<Proxy> - Loaded {} bytes from cache memory", body_bytes.len());
 
         let res_status: StatusCode = StatusCode::OK;
         let mut res_builder = AxumResponse::builder().status(res_status);

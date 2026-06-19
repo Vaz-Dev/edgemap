@@ -10,13 +10,14 @@ pub struct Config {
     pub max_memory_mb: u64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct SiteMapEntry {
     pub loc: String,
     pub priority: f64,
 }
 
 static DEFAULT_PORT: u16 = 8080;
+
 impl Config {
     pub fn new(args: Vec<String>) -> Config {
         if args.len() < 2 {
@@ -92,7 +93,7 @@ mod tests {
             method: Method::GET,
         };
         let headers = HeaderMap::new();
-        assert!(matches!(cache.check(&req, &headers), PathType::Public | PathType::Cached(_)));
+        assert!(matches!(cache.check(&req, &headers), PathType::Public(_) | PathType::Cached(_)));
     }
 
     #[test]
@@ -103,7 +104,7 @@ mod tests {
             method: Method::GET,
         };
         let headers = HeaderMap::new();
-        assert!(matches!(cache.check(&req, &headers), PathType::Public | PathType::Cached(_)));
+        assert!(matches!(cache.check(&req, &headers), PathType::Public(_) | PathType::Cached(_)));
     }
 
     #[test]
