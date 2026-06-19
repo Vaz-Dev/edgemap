@@ -6,13 +6,9 @@
   ],
   "sitemap": [
     {
-      "loc": "/media/images/cases/*",
+      "loc": "/*",
       "priority": 1.0
-    },
-    {
-      "loc": "/",
-      "priority": 0.9
     }
   ],
-  "max_memory_mb": 1
+  "max_memory_mb": 50
 }

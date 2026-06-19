@@ -6,6 +6,7 @@ use std::{
 
 use axum::http::HeaderMap;
 use bytes::Bytes;
+use reqwest::header;
 
 use crate::{config::SiteMapEntry, proxy::RequestData};
 

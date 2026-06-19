@@ -29,6 +29,7 @@ On this example the config was defined as:
 - `/media/videos/*` is not set in the sitemap
 - `/media/images/logos/*` is set as a medium priority
 - `/media/images/cases/*` is set as the highest priority
+- `1MB` as the limit for the in-memory cache
 
 Results:
 ```log
