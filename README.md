@@ -27,8 +27,8 @@ On heavy SSR apps (like Next.js) performance should be better, while on Go multi
 ## Round-Robin, OOM Prevention and Weighted Eviction in Action
 On this example the config was defined as:
 - `/media/videos/*` is not set in the sitemap
-- `/media/logos/*` is set as a medium priority
-- `/media/cases/*` is set as the highest priority
+- `/media/images/logos/*` is set as a medium priority
+- `/media/images/cases/*` is set as the highest priority
 
 Results:
 ```log
