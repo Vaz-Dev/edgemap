@@ -30,14 +30,14 @@ mod tests {
 
     use super::*;
 
-    fn test_empty_pool() -> UpstreamPool {
+    fn create_test_empty_pool() -> UpstreamPool {
         UpstreamPool::new(vec![])
     }
-    fn test_single_pool() -> UpstreamPool {
+    fn create_test_single_pool() -> UpstreamPool {
         let upstreams = vec![String::from("http://localhost:3000")];
         UpstreamPool::new(upstreams)
     }
-    fn test_multiple_pool() -> UpstreamPool {
+    fn create_test_multiple_pool() -> UpstreamPool {
         let upstreams = vec![
             String::from("http://localhost:3000"),
             String::from("http://localhost:3001"),
@@ -51,12 +51,12 @@ mod tests {
     #[test]
     #[should_panic]
     fn get_from_empty_pool_panics() {
-        test_empty_pool().get_upstream();
+        create_test_empty_pool().get_upstream();
     }
 
     #[test]
     fn get_from_single_pool_repeats() {
-        let pool = test_single_pool();
+        let pool = create_test_single_pool();
         assert_eq!(pool.get_upstream(), "http://localhost:3000");
         assert_eq!(pool.get_upstream(), "http://localhost:3000");
         assert_eq!(pool.get_upstream(), "http://localhost:3000");
@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn get_from_multiple_pool_round_robin() {
-        let pool = test_multiple_pool();
+        let pool = create_test_multiple_pool();
         assert_eq!(pool.get_upstream(), "http://localhost:3000");
         assert_eq!(pool.get_upstream(), "http://localhost:3001");
         assert_eq!(pool.get_upstream(), "http://localhost:3002");

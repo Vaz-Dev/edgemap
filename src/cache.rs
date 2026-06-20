@@ -44,6 +44,7 @@ struct WeightEntry {
 }
 
 pub type Weight = f64;
+#[derive(Debug)]
 pub enum PathType {
     Cached(CacheItem),
     Public(Weight),
@@ -280,5 +281,239 @@ impl CacheHandler {
             available_space_bytes += evicted_bytes;
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::{HeaderMap, Uri};
+    use bytes::Bytes;
+    use std::str::FromStr;
+
+    fn create_test_cache(max_mb: u64) -> CacheHandler {
+        let sitemap = vec![
+            SiteMapEntry {
+                loc: "/high/*".to_string(),
+                priority: 1.0,
+            },
+            SiteMapEntry {
+                loc: "/".to_string(),
+                priority: 0.1,
+            },
+            SiteMapEntry {
+                loc: "/low/*".to_string(),
+                priority: 0.5,
+            },
+            SiteMapEntry {
+                loc: "/repeated".to_string(),
+                priority: 0.1,
+            },
+        ];
+        CacheHandler::new(sitemap, max_mb)
+    }
+
+    fn make_req_data(path: &str) -> RequestData {
+        RequestData::extract(
+            &axum::extract::Request::builder()
+                .uri(Uri::from_str(path).unwrap())
+                .method(reqwest::Method::GET)
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+    }
+
+    #[test]
+    fn test_bucket_uniqueness_and_ordering() {
+        let cache = create_test_cache(1);
+
+        assert_eq!(cache.state.read().unwrap().buckets.len(), 3);
+
+        let weights: Vec<_> = cache
+            .state
+            .read()
+            .unwrap()
+            .buckets
+            .iter()
+            .map(|b| b.weight)
+            .collect();
+        assert!(weights.contains(&1.0));
+        assert!(weights.contains(&0.5));
+        assert!(weights.contains(&0.1));
+    }
+
+    #[test]
+    fn test_check_exact_matching() {
+        let cache = create_test_cache(1);
+
+        let req = make_req_data("/low/file.txt");
+        let result = cache.check(&req, &HeaderMap::new());
+        if let PathType::Public(weight) = result {
+            assert_eq!(weight, 0.5);
+        } else {
+            panic!("Expected Public path type");
+        }
+    }
+
+    #[test]
+    fn test_check_wildcard_matching() {
+        let cache = create_test_cache(1);
+
+        let req = make_req_data("/high/resource.json");
+        let result = cache.check(&req, &HeaderMap::new());
+        if let PathType::Public(weight) = result {
+            assert_eq!(weight, 1.0);
+        } else {
+            panic!("Expected Public path type");
+        }
+    }
+
+    #[test]
+    fn test_check_private_route() {
+        let cache = create_test_cache(1);
+
+        let req = make_req_data("/api/users");
+        let result = cache.check(&req, &HeaderMap::new());
+        assert!(matches!(result, PathType::Private));
+    }
+
+    #[test]
+    fn test_cache_blacklist_bypass() {
+        let cache = create_test_cache(1);
+
+        let bypass_headers = vec![
+            "no-store",
+            "no-cache",
+            "max-age=0",
+            "private",
+            "no-store, no-cache",
+            "public, max-age=0",
+        ];
+
+        for header_value in bypass_headers {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CACHE_CONTROL, header_value.parse().unwrap());
+
+            let req = make_req_data("/high/page.html");
+            let result = cache.check(&req, &headers);
+
+            assert!(
+                matches!(result, PathType::Private),
+                "Header '{}' should bypass cache, but got {:?}",
+                header_value,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_valid_caching_headers() {
+        let cache = create_test_cache(1);
+
+        let valid_headers = vec!["", "public", "public, max-age=3600", "must-revalidate"];
+
+        for header_value in valid_headers {
+            let mut headers = HeaderMap::new();
+            if !header_value.is_empty() {
+                headers.insert(header::CACHE_CONTROL, header_value.parse().unwrap());
+            }
+
+            let req = make_req_data("/high/page.html");
+            let result = cache.check(&req, &headers);
+
+            if let PathType::Private = result {
+                panic!();
+            }
+        }
+    }
+
+    #[test]
+    fn test_save_and_get_from_cache() {
+        let cache = create_test_cache(1);
+
+        let body = Bytes::from_static(b"edgemap");
+        let req = make_req_data("/high/test");
+
+        cache.try_save(req.clone(), body.clone(), HeaderMap::new(), 1.0);
+
+        let result = cache.check(&req, &HeaderMap::new());
+        match result {
+            PathType::Cached(item) => {
+                assert_eq!(item.bytes, body);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_eviction_removes_lower_priority() {
+        let cache = create_test_cache(1);
+
+        let low_body = Bytes::from(vec![0u8; 500 * 1024]); // 500KB
+        let low_req = make_req_data("/low/large1");
+        cache.try_save(low_req.clone(), low_body.clone(), HeaderMap::new(), 0.5);
+
+        let low_body2 = Bytes::from(vec![1u8; 500 * 1024]);
+        let low_req2 = make_req_data("/low/large2");
+        cache.try_save(low_req2.clone(), low_body2.clone(), HeaderMap::new(), 0.5);
+
+        let high_body = Bytes::from(vec![2u8; 600 * 1024]);
+        let high_req = make_req_data("/high/new");
+        cache.try_save(high_req.clone(), high_body.clone(), HeaderMap::new(), 1.0);
+
+        let result = cache.check(&high_req, &HeaderMap::new());
+        match result {
+            PathType::Cached(item) => {
+                assert_eq!(item.bytes, high_body);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn test_weighted_eviction_skips_same_or_higher_priority() {
+        let cache = create_test_cache(1);
+
+        let body0 = Bytes::from(vec![0u8; 800 * 1024]);
+        let req0 = make_req_data("/high/item");
+        cache.try_save(req0.clone(), body0.clone(), HeaderMap::new(), 1.0);
+
+        let body1 = Bytes::from(vec![1u8; 500 * 1024]);
+        let req1 = make_req_data("/high/newer");
+        cache.try_save(req1.clone(), body1.clone(), HeaderMap::new(), 1.0);
+
+        let body2 = Bytes::from(vec![2u8; 500 * 1024]);
+        let req2 = make_req_data("/high/newer");
+        cache.try_save(req2.clone(), body2.clone(), HeaderMap::new(), 0.5);
+
+        let result0 = cache.check(&req0, &HeaderMap::new());
+        match result0 {
+            PathType::Cached(item) => {
+                assert_eq!(item.bytes, body0);
+            }
+            _ => panic!(),
+        }
+        let result1 = cache.check(&req1, &HeaderMap::new());
+        if let PathType::Cached(_) = result1 {
+            panic!();
+        }
+        let result2 = cache.check(&req2, &HeaderMap::new());
+        if let PathType::Cached(_) = result2 {
+            panic!();
+        }
+    }
+
+    #[test]
+    fn test_max_bytes_limit() {
+        let cache = create_test_cache(1);
+
+        let body = Bytes::from(vec![0u8; 20 * 1024 * 1024]);
+        let req = make_req_data("/huge");
+        cache.try_save(req.clone(), body.clone(), HeaderMap::new(), 1.0);
+
+        let result = cache.check(&req, &HeaderMap::new());
+        if let PathType::Cached(_) = result {
+            panic!();
+        }
     }
 }

@@ -78,7 +78,7 @@ mod tests {
 
     use super::*;
 
-    fn test_sitemap() -> Vec<SiteMapEntry> {
+    fn create_test_sitemap() -> Vec<SiteMapEntry> {
         vec![
             SiteMapEntry { loc: "/".to_string(), priority: 1.0 },
             SiteMapEntry { loc: "/public/*".to_string(), priority: 0.5 },
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn test_exact_match_allowed() {
-        let cache = CacheHandler::new(test_sitemap(), 2);
+        let cache = CacheHandler::new(create_test_sitemap(), 2);
         let req = RequestData {
             uri: "/".parse().unwrap(),
             method: Method::GET,
@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_wildcard_match_allowed() {
-        let cache = CacheHandler::new(test_sitemap(), 2);
+        let cache = CacheHandler::new(create_test_sitemap(), 2);
         let req = RequestData {
             uri: "/public/style.css".parse().unwrap(),
             method: Method::GET,
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn test_api_path_blocked() {
-        let cache = CacheHandler::new(test_sitemap(), 2);
+        let cache = CacheHandler::new(create_test_sitemap(), 2);
         let req = RequestData {
             uri: "/api/users".parse().unwrap(),
             method: Method::GET,
