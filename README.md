@@ -74,6 +74,6 @@ This is a **prototype** and not yet to be used in production. Here is what is st
   - RFC 9111 Compliance: i am currently implementing Cache-Control, ETag, and Vary header logic to fully respect origin server directives.
   - Support for sitemap.xml: during initial development im using a quick and easy serde for the config.json, in the future the proxy will have a third mode (a mix of fully configurated and lite mode), which will use the standard sitemap.xml which most websites already have as valid configuration.
   - Zero-Copy Streaming: right now, bodies are buffered into memory. Future refactoring will use raw TCP streaming to handle large files without memory overhead.
-  - Scaling: upstream servers are currently static in the config. in the future the project will manage containers/processes to increase the number of instances under load, or scale to zero if the use case allows for mainly cache use of the assets.
   - Protocol Handling: Filtering hop-by-hop headers (Connection, Transfer-Encoding) to comply with RFC 7230 proxy standards.
   - TLS Support: currently, attempting to use HTTPS as upstreams causes undefined behavior, im planning to add this after the main features using `rustls`
+  - Scaling: upstream servers are currently static in the config. in the future the project will manage containers/processes to increase the number of instances under load, or scale to zero if the use case allows for mainly cache use of the assets.

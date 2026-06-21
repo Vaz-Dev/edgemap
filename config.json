@@ -6,8 +6,12 @@
   ],
   "sitemap": [
     {
-      "loc": "/*",
+      "loc": "/",
       "priority": 1.0
+    },
+    {
+      "loc": "/public/*",
+      "priority": 0.5
     }
   ],
   "max_memory_mb": 50

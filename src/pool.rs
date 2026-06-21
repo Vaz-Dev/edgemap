@@ -5,7 +5,7 @@ pub struct UpstreamPool {
     index: AtomicUsize,
 }
 
-type Upstream = String;
+pub type Upstream = String;
 
 impl UpstreamPool {
     pub fn new(upstreams: Vec<String>) -> Self {
