@@ -10,7 +10,6 @@ use reqwest::header;
 
 use crate::{config::SiteMapEntry, proxy::RequestData};
 
-// todo: make a clear() method that clears data/poisons
 pub struct CacheHandler {
     state: RwLock<CacheState>,
     sitemap: Vec<SiteMapEntry>,
@@ -130,7 +129,11 @@ impl CacheHandler {
 
         if let Some(priority) = is_allowed {
             let cached_response: Option<CacheItem> = {
-                let cache_read_guard = self.state.read().expect("Cache State Poisoned");
+                let cache_read_guard = self.state.read().unwrap_or_else(|_| {
+                    self.clear();
+                    self.state.read().unwrap()
+                });
+
                 cache_read_guard.cache.get(req_data).cloned()
             };
 
@@ -170,7 +173,11 @@ impl CacheHandler {
         }
         let new_data_bytes = body.len();
         let current_cache_bytes = {
-            let cache_read_guard = self.state.read().expect("Cache State Poisoned");
+            let cache_read_guard = self.state.read().unwrap_or_else(|_| {
+                self.clear();
+                self.state.read().unwrap()
+            });
+
             cache_read_guard.current_bytes
         };
         let max_cache_bytes: usize = self.max_bytes;
@@ -194,9 +201,47 @@ impl CacheHandler {
         }
     }
 
+    /// clears all data and unpoisons the cache
+    pub fn clear(&self) {
+        let buckets = {
+            let mut weights = vec![];
+            self.sitemap.iter().for_each(|entry| {
+                let weight = entry.priority;
+                if !weights.contains(&weight) {
+                    weights.push(weight)
+                }
+            });
+            weights
+                .iter()
+                .map(|weight| WeightsBucket {
+                    weight: *weight,
+                    entries: vec![],
+                    current_bytes: 0,
+                })
+                .collect()
+        };
+        let state = CacheState {
+            cache: HashMap::new(),
+            buckets,
+            current_bytes: 0,
+        };
+        let mut cache_write_guard = self.state.write().unwrap_or_else(|_| {
+            self.state.clear_poison();
+            self.state.write().unwrap()
+        });
+        cache_write_guard.cache = state.cache;
+        cache_write_guard.buckets = state.buckets;
+        cache_write_guard.current_bytes = state.current_bytes;
+        println!("DEBUG::<Cache> - Clearing all cached data");
+    }
+
     /// actually inserts (or fails silently) entries in the cache
     fn insert(&self, req_data: RequestData, body: Bytes, headers: HeaderMap, priority: Weight) {
-        let mut cache_write_guard = self.state.write().expect("Cache poisoned");
+        let mut cache_write_guard = self.state.write().unwrap_or_else(|_| {
+            self.clear();
+            self.state.write().unwrap()
+        });
+
         // todo: find a better way to make this thread safe AND fast, this lock and double check is safe but inefficient, maybe parking_lot's RwLock?
         if cache_write_guard.current_bytes + body.len() < self.max_bytes {
             cache_write_guard.current_bytes += body.len();
@@ -241,7 +286,10 @@ impl CacheHandler {
         if weights_lower_than_target.is_empty() {
             return false;
         }
-        let mut cache_write_guard = self.state.write().expect("Cache posioned");
+        let mut cache_write_guard = self.state.write().unwrap_or_else(|_| {
+            self.clear();
+            self.state.write().unwrap()
+        });
         let buckets = &cache_write_guard.buckets;
         let evictable_bytes: usize = buckets
             .iter()
@@ -514,6 +562,32 @@ mod tests {
         let result = cache.check(&req, &HeaderMap::new());
         if let PathType::Cached(_) = result {
             panic!();
+        }
+    }
+
+    #[test]
+    fn test_clear_and_get_from_cache() {
+        let cache = create_test_cache(1);
+
+        let body = Bytes::from_static(b"edgemap");
+        let req = make_req_data("/high/test");
+
+        cache.try_save(req.clone(), body.clone(), HeaderMap::new(), 1.0);
+        let result1 = cache.check(&req, &HeaderMap::new());
+        match result1 {
+            PathType::Cached(item) => {
+                assert_eq!(item.bytes, body);
+            }
+            _ => panic!(),
+        }
+        cache.clear();
+
+        let result2 = cache.check(&req, &HeaderMap::new());
+        match result2 {
+            PathType::Public(weight) => {
+                assert_eq!(weight, 1.0);
+            }
+            _ => panic!(),
         }
     }
 }

@@ -30,6 +30,12 @@ impl RequestData {
         }
     }
 }
+impl Hash for RequestData {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.uri.hash(state);
+        self.method.hash(state);
+    }
+}
 
 impl ProxyHandler {
     pub fn new(config: Config) -> Self {
@@ -107,15 +113,8 @@ impl ProxyHandler {
         let body_bytes = response.bytes().await?;
 
         Ok((status, headers, body_bytes))
-}
-    
-}
-
-impl Hash for RequestData {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.uri.hash(state);
-        self.method.hash(state);
     }
+    
 }
 
 

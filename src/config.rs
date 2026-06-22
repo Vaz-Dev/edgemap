@@ -91,9 +91,10 @@ mod tests {
         let req = RequestData {
             uri: "/".parse().unwrap(),
             method: Method::GET,
+            headers: HeaderMap::new()
+
         };
-        let headers = HeaderMap::new();
-        assert!(matches!(cache.check(&req, &headers), PathType::Public(_) | PathType::Cached(_)));
+        assert!(matches!(cache.check(&req, &req.headers), PathType::Public(_) | PathType::Cached(_)));
     }
 
     #[test]
@@ -102,9 +103,9 @@ mod tests {
         let req = RequestData {
             uri: "/public/style.css".parse().unwrap(),
             method: Method::GET,
+            headers: HeaderMap::new()
         };
-        let headers = HeaderMap::new();
-        assert!(matches!(cache.check(&req, &headers), PathType::Public(_) | PathType::Cached(_)));
+        assert!(matches!(cache.check(&req, &req.headers), PathType::Public(_) | PathType::Cached(_)));
     }
 
     #[test]
@@ -113,8 +114,8 @@ mod tests {
         let req = RequestData {
             uri: "/api/users".parse().unwrap(),
             method: Method::GET,
+            headers: HeaderMap::new()
         };
-        let headers = HeaderMap::new();
-        assert!(matches!(cache.check(&req, &headers), PathType::Private));
+        assert!(matches!(cache.check(&req, &req.headers), PathType::Private));
     }
 }
