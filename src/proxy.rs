@@ -1,8 +1,8 @@
 use axum::{body::Body as AxumBody, extract::Request as AxumRequest, http::{HeaderMap, Uri}, response::Response as AxumResponse };
 use bytes::Bytes;
 use http_body_util::BodyExt;
-use reqwest::{Client, Method, Response as ReqwestResponse, StatusCode, header::CACHE_STATUS};
-use std::{hash::{Hash, Hasher}, time::Duration};
+use reqwest::{Client, Method, StatusCode, header::CACHE_STATUS};
+use std::{ hash::{Hash, Hasher}, sync::Arc, time::Duration};
 use tower::{limit::ConcurrencyLimitLayer};
 
 use crate::{cache::{CacheHandler, CacheItem, PathType, Weight}, config::Config, pool::{Upstream, UpstreamPool}};
@@ -10,8 +10,9 @@ use crate::{cache::{CacheHandler, CacheItem, PathType, Weight}, config::Config, 
 pub struct ProxyHandler {
     http_client: Client,
     pool: UpstreamPool,
-    cache_handler: CacheHandler,
+    cache_handler: Arc<CacheHandler>,
 }
+
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +51,7 @@ impl ProxyHandler {
             ProxyHandler {
                 http_client: client,
                 pool,
-                cache_handler: CacheHandler::new(config.sitemap, config.max_memory_mb)
+                cache_handler: Arc::new(CacheHandler::new(config.sitemap, config.max_memory_mb))
             }
     }
 
@@ -74,7 +75,11 @@ impl ProxyHandler {
         let req_data = RequestData::extract(&axum_req);
         let req_body = axum_req.into_body().collect().await?.to_bytes();
         let (status, res_headers, res_body) = self.forward_request(&req_data, req_body, server).await?;
-        self.cache_handler.try_save(req_data, res_body.clone(), res_headers.clone(), priority);
+        let (task_cache, task_body, task_headers) = (self.cache_handler.clone(), res_body.clone(), res_headers.clone());
+        // todo: prevent threads from making multiple requests to the same endpoint before this fire-and-forget was able to cache it
+        tokio::spawn(async move {
+            task_cache.try_save(req_data, task_body, task_headers, priority);
+        });
         mount_response(status, res_headers, res_body, "fwd=miss")
     }
 
@@ -129,3 +134,7 @@ fn mount_response(status: StatusCode, headers: HeaderMap, body: Bytes, cache_sta
         .body(AxumBody::from(body))?;
     Ok(mounted_response)
 }
+
+// todo: i keep opening servers and testing with hey to check performance and trace bugs,
+// i want to make a suite of automated tests that tests and reports the current performance of the proxy under different cases using a single command,
+// also add a logger module to centralize and improve this tracing

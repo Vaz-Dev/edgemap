@@ -39,7 +39,8 @@ struct WeightsBucket {
 struct WeightEntry {
     key: RequestData,
     size_bytes: usize,
-    created_at: Duration,
+    // todo: add and verify TTL
+    // created_at: Duration,
 }
 
 pub type Weight = f64;
@@ -246,12 +247,13 @@ impl CacheHandler {
         if cache_write_guard.current_bytes + body.len() < self.max_bytes {
             cache_write_guard.current_bytes += body.len();
 
+            println!("DEBUG::<Cache> - Storing {} into cache", req_data.uri);
             for (index, bucket) in cache_write_guard.buckets.iter_mut().enumerate() {
                 if bucket.weight == priority {
                     bucket.entries.push(WeightEntry {
                         key: req_data.clone(),
                         size_bytes: body.len(),
-                        created_at: UNIX_EPOCH.elapsed().unwrap(),
+                        // created_at: UNIX_EPOCH.elapsed().unwrap(),
                     });
                     let bucket_indexes = (index, bucket.entries.len() - 1);
                     bucket.current_bytes += body.len();
@@ -476,18 +478,26 @@ mod tests {
     }
 
     #[test]
-    fn test_save_and_get_from_cache() {
+    fn test_save_get_clear() {
         let cache = create_test_cache(1);
 
         let body = Bytes::from_static(b"edgemap");
         let req = make_req_data("/high/test");
 
         cache.try_save(req.clone(), body.clone(), HeaderMap::new(), 1.0);
-
-        let result = cache.check(&req, &HeaderMap::new());
-        match result {
+        let result1 = cache.check(&req, &HeaderMap::new());
+        match result1 {
             PathType::Cached(item) => {
                 assert_eq!(item.bytes, body);
+            }
+            _ => panic!(),
+        }
+        cache.clear();
+
+        let result2 = cache.check(&req, &HeaderMap::new());
+        match result2 {
+            PathType::Public(weight) => {
+                assert_eq!(weight, 1.0);
             }
             _ => panic!(),
         }
@@ -562,32 +572,6 @@ mod tests {
         let result = cache.check(&req, &HeaderMap::new());
         if let PathType::Cached(_) = result {
             panic!();
-        }
-    }
-
-    #[test]
-    fn test_clear_and_get_from_cache() {
-        let cache = create_test_cache(1);
-
-        let body = Bytes::from_static(b"edgemap");
-        let req = make_req_data("/high/test");
-
-        cache.try_save(req.clone(), body.clone(), HeaderMap::new(), 1.0);
-        let result1 = cache.check(&req, &HeaderMap::new());
-        match result1 {
-            PathType::Cached(item) => {
-                assert_eq!(item.bytes, body);
-            }
-            _ => panic!(),
-        }
-        cache.clear();
-
-        let result2 = cache.check(&req, &HeaderMap::new());
-        match result2 {
-            PathType::Public(weight) => {
-                assert_eq!(weight, 1.0);
-            }
-            _ => panic!(),
         }
     }
 }
