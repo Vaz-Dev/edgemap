@@ -1,5 +1,5 @@
 {
-  "output_port": 9001,
+  "output_port": 8080,
   "upstreams": [
     "http://localhost:3000",
     "http://localhost:3001"

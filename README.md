@@ -48,6 +48,7 @@ DEBUG::<Cache> - Cache full (1MB). Skipping cache for: /media/images/logo/logo_d
 ```
 
 ## Configuration
+The examples below assume running localhost servers at ports 3000 and 3001, modify as needed, but it is required some sort of server running to test the proxy.
 
 ### Run with a config file:
 `cargo run config.json`
@@ -66,8 +67,17 @@ Example config.json:
 }
 ```
 
-### Or use Lite Mode (single upstream):
-`cargo run 3000`
+### Or use Lite Mode (single upstream, cache everything):
+
+**With Cargo**
+`cargo run http://localhost:3000`
+
+**With Docker**
+```bash
+docker build -t edgemap:v0-lite .
+docker run --network host --name edgemap -d edgemap:v0-lite
+docker logs -f edgemap
+```
 
 This is a **prototype** and not yet to be used in production. Here is what is still missing or being worked on:
 

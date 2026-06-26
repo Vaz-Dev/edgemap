@@ -1,10 +1,9 @@
 use std::{env, sync::Arc};
 
-use axum::{Router, extract::{Request, State}, response::IntoResponse, routing::get};
-use http_body_util::Collected;
+use axum::{Router, extract::{Request, State}, response::IntoResponse};
 use reqwest::StatusCode;
 
-use crate::{config::Config, pool::UpstreamPool, proxy::ProxyHandler};
+use crate::{config::Config, proxy::ProxyHandler};
 
 mod pool;
 mod proxy;

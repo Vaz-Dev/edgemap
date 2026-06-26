@@ -27,18 +27,23 @@ impl Config {
         if args.len() == 3 && let Ok(proxy_port_arg) = args[2].parse::<u16>() {
                 proxy_port = proxy_port_arg;
         }
-        match args[1].parse::<u16>() {
-            Ok(upstream_port) => Config::lite_mode(upstream_port, proxy_port),
-            Err(_) => Config::read_file(&args[1]),
+        if args[1].contains("http") {
+            let upstream_port = &args[1];
+           Config::lite_mode(upstream_port.to_string(), proxy_port)
+        } else {
+            Config::read_file(&args[1])
+            
         }
     }
 
-    fn lite_mode(upstream_port: u16, proxy_port: u16) -> Config {
+    fn lite_mode(upstream_port: String, proxy_port: u16) -> Config {
         println!("Starting using lite mode on port {}", &proxy_port);
         Config {
             output_port: proxy_port,
-            upstreams: vec![format!("http://localhost:{}", upstream_port)],
-            sitemap: vec![],
+            upstreams: vec![upstream_port],
+            sitemap: vec![
+                SiteMapEntry{ loc: "/*".to_string(), priority: 1.0 }
+            ],
             max_memory_mb: 32,
         }
     }
