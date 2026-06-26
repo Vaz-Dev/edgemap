@@ -243,8 +243,12 @@ impl CacheHandler {
             self.state.write().unwrap()
         });
 
+        let space_available = cache_write_guard.current_bytes + body.len() < self.max_bytes;
+        // todo: later there will be logic to overwrite items, but for now this prevent race conditions
+        let item_already_added = cache_write_guard.cache.contains_key(&req_data);
+
         // todo: find a better way to make this thread safe AND fast, this lock and double check is safe but inefficient, maybe parking_lot's RwLock?
-        if cache_write_guard.current_bytes + body.len() < self.max_bytes {
+        if space_available && !item_already_added {
             cache_write_guard.current_bytes += body.len();
 
             println!("DEBUG::<Cache> - Storing {} into cache", req_data.uri);
@@ -268,6 +272,11 @@ impl CacheHandler {
                     break;
                 }
             }
+        } else {
+            println!(
+                "DEBUG::<Cache> - Aborted storing {} into cache, race condition detected",
+                req_data.uri
+            );
         }
     }
 
