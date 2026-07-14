@@ -8,14 +8,14 @@ pub struct UpstreamPool {
 pub type Upstream = String;
 
 impl UpstreamPool {
-    pub fn new(upstreams: Vec<String>) -> Self {
+    pub fn new(upstreams: Vec<Upstream>) -> Self {
         UpstreamPool {
             upstreams,
             index: AtomicUsize::from(0),
         }
     }
 
-    pub fn get_upstream(&self) -> &String {
+    pub fn get_upstream(&self) -> &Upstream {
         if self.upstreams.is_empty() {
             panic!("Fatal Error: No upstream servers set")
         }

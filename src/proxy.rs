@@ -13,8 +13,6 @@ pub struct ProxyHandler {
     cache_handler: Arc<CacheHandler>,
 }
 
-
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestData {
     pub uri: Uri,
@@ -61,12 +59,12 @@ impl ProxyHandler {
 
         match path_type {
             PathType::Cached(cache_data) => self.handle_cached(cache_data).await,
-            PathType::Public(priority) => self.handle_public(axum_req, priority).await,
+            PathType::Public(weight) => self.handle_public(axum_req, weight).await,
             PathType::Private => self.handle_private(axum_req).await,
         }
     }
 
-    async fn handle_public(&self, axum_req: AxumRequest<AxumBody>, priority: Weight) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
+    async fn handle_public(&self, axum_req: AxumRequest<AxumBody>, weight: Weight) -> Result<AxumResponse, Box<dyn std::error::Error + Send + Sync>> {
 
         let server = self.pool.get_upstream();
         println!("DEBUG::<Proxy> - Fetching {} from upstream {} and storing in cache", axum_req.uri(), server);
@@ -78,7 +76,7 @@ impl ProxyHandler {
         let (task_cache, task_body, task_headers) = (self.cache_handler.clone(), res_body.clone(), res_headers.clone());
         // todo: prevent threads from making multiple requests to the same endpoint before this fire-and-forget was able to cache it
         tokio::spawn(async move {
-            task_cache.try_save(req_data, task_body, task_headers, priority);
+            task_cache.try_save(req_data, task_body, task_headers, weight);
         });
         mount_response(status, res_headers, res_body, "fwd=miss")
     }

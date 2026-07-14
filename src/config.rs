@@ -21,7 +21,7 @@ static DEFAULT_PORT: u16 = 8080;
 impl Config {
     pub fn new(args: Vec<String>) -> Config {
         if args.len() < 2 {
-            panic!("Use a port of configuration file path as argument")
+            panic!("Use an address of configuration file path as argument")
         }
         let mut proxy_port = DEFAULT_PORT;
         if args.len() == 3 && let Ok(proxy_port_arg) = args[2].parse::<u16>() {
@@ -31,8 +31,7 @@ impl Config {
             let upstream_port = &args[1];
            Config::lite_mode(upstream_port.to_string(), proxy_port)
         } else {
-            Config::read_file(&args[1])
-            
+           Config::read_file(&args[1])
         }
     }
 

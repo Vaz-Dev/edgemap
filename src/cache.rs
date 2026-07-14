@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::RwLock,
-    time::{Duration, UNIX_EPOCH},
-};
+use std::{collections::HashMap, sync::RwLock};
 
 use axum::http::HeaderMap;
 use bytes::Bytes;
@@ -22,10 +18,9 @@ struct CacheState {
     current_bytes: usize,
 }
 
-// todo: make it Arc to avoid any deep copies
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CacheItem {
-    pub bytes: Bytes,
+    pub bytes: Bytes, // todo: make it Arc to avoid any deep copies
     pub headers: HeaderMap,
     bucket_indexes: (usize, usize),
 }
